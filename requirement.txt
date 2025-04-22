@@ -1,0 +1,22 @@
+# --- Core runtime ----------------------------------------------------
+streamlit>=1.34
+openai>=1.25          # Chat / DALL·E API
+langchain>=0.2.1
+faiss-cpu>=1.8.0      # Vector store (use faiss-gpu if you have a GPU)
+pypdf2>=3.0           # PDF parsing (pulled in by LangChain)
+pillow>=10.0          # Image display (indirect dependency of Streamlit)
+
+# --- Extra features --------------------------------------------------
+plotly>=5.20          # Trend charts
+pandas>=2.2
+
+# Weekly‑plan export → PDF  (choose one, kaleido recommended)
+kaleido>=0.2.1        # Static export for Plotly; can also render PDFs
+pdfkit>=1.0           # Markdown → PDF
+#  pdfkit requires wkhtmltopdf installed at the OS level (brew / apt / choco)
+
+# Optional: very fast PDF parsing for large files
+pymupdf>=1.24
+
+# Optional: nicer interactive tables in Streamlit
+streamlit-aggrid>=0.3
