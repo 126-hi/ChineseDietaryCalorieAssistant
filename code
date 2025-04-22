@@ -1,0 +1,258 @@
+# -*- coding: utf-8 -*-
+"""
+Enhanced modules for the Streamlit Multi‑Agent Cuisine Assistant
+==============================================================
+Adds **five new capabilities** requested on 2025‑04‑22:
+
+1️⃣  🎯 Personalised goal calculator (BMR / TDEE) based on the Mifflin‑St Jeor formula
+2️⃣  🍱 Ingredient preferences & diet filters for Recipe / Meal‑Plan agents
+3️⃣  📅 One‑click export of weekly meal plan (Markdown & PDF*)
+4️⃣  🧾 Auto‑generated weekly shopping list (downloadable CSV)
+5️⃣  📈 Daily calorie & weight tracker with Plotly trend chart
+
+*PDF export requires the optional `pdfkit` + `wkhtmltopdf` or `kaleido` back‑end.
+
+Integrate by **importing** the helper functions & UI blocks into your main
+`app.py`, or copy‑paste the `with st.sidebar` & layout sections directly.
+"""
+
+from __future__ import annotations
+import datetime as dt
+import json
+import re
+from pathlib import Path
+from typing import Dict, List, Tuple
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# ---------------------------------------------------------------------------
+# 🔗 Section 1 – Personalised goal calculator
+# ---------------------------------------------------------------------------
+
+def mifflin_st_jeor(sex: str, weight_kg: float, height_cm: float, age: int) -> float:
+    """Return Basal Metabolic Rate estimated using the Mifflin‑St Jeor equation."""
+    if sex.lower() == "male":
+        return 10 * weight_kg + 6.25 * height_cm - 5 * age + 5
+    return 10 * weight_kg + 6.25 * height_cm - 5 * age - 161
+
+_ACTIVITY_FACTOR = {
+    "Sedentary (little / no exercise)": 1.2,
+    "Light (1–3 days/wk)": 1.375,
+    "Moderate (3–5 days/wk)": 1.55,
+    "Active (6–7 days/wk)": 1.725,
+    "Very Active (physical job)": 1.9,
+}
+
+_GOAL_ADJUST = {
+    "Lose weight": -500,          # kcal deficit per day (≈‑0.45 kg/week)
+    "Maintain": 0,
+    "Gain muscle": 300,           # slight surplus
+}
+
+
+def sidebar_goal_block() -> None:
+    """Render the sidebar inputs and store recommended calories in `st.session_state`."""
+
+    st.sidebar.header("🎯 Personal Goal")
+    sex = st.sidebar.radio("Sex", ("Male", "Female"), horizontal=True)
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        age = st.number_input("Age", 10, 100, value=25)
+        weight = st.number_input("Weight (kg)", 30.0, 300.0, value=70.0, format="%0.1f")
+    with col2:
+        height = st.number_input("Height (cm)", 120.0, 230.0, value=170.0, format="%0.1f")
+        goal_type = st.selectbox("Goal", ("Lose weight", "Maintain", "Gain muscle"))
+    activity = st.selectbox("Activity Level", list(_ACTIVITY_FACTOR))
+
+    if st.button("⚡ Calculate Daily Target"):
+        bmr = mifflin_st_jeor(sex, weight, height, age)
+        tdee = bmr * _ACTIVITY_FACTOR[activity]
+        recommended = max(1000, round(tdee + _GOAL_ADJUST[goal_type]))  # keep sensible lower bound
+        st.session_state["recommended_calories"] = recommended
+        st.success(
+            f"BMR ≈ **{bmr:.0f} kcal**   |   TDEE ≈ **{tdee:.0f} kcal**   →   **{recommended} kcal/day** target",
+        )
+
+
+# ---------------------------------------------------------------------------
+# 🔗 Section 2 – Ingredient preferences & diet filters
+# ---------------------------------------------------------------------------
+
+def preference_form(section: str) -> Dict[str, str | List[str]]:
+    """Render preference inputs and return a dictionary of filters."""
+    if section not in {"Recipes", "Make Meal Plans"}:
+        return {}
+
+    with st.expander("🛠️ Diet Filters & Preferences"):
+        liked = st.text_input("👍 Preferred ingredients (comma‑separated)")
+        disliked = st.text_input("👎 Avoid ingredients (comma‑separated)")
+        diets = st.multiselect(
+            "Dietary style", ["Vegetarian", "Low‑carb", "High‑protein"],
+        )
+    return {
+        "liked": liked,
+        "disliked": disliked,
+        "diets": diets,
+    }
+
+
+def augment_prompt(prompt: str, prefs: Dict[str, str | List[str]]) -> str:
+    """Append preference tokens to the user prompt passed to agents."""
+    tokens = []
+    if prefs.get("liked"):
+        tokens.append(f"Preferred ingredients: {prefs['liked']}")
+    if prefs.get("disliked"):
+        tokens.append(f"Avoid: {prefs['disliked']}")
+    if prefs.get("diets"):
+        tokens.append("Diet style: " + ", ".join(prefs["diets"]))
+    return prompt + ("\n" + "\n".join(tokens) if tokens else "")
+
+
+# ---------------------------------------------------------------------------
+# 🔗 Section 3 – Export helpers (Markdown / PDF)
+# ---------------------------------------------------------------------------
+
+def make_download_buttons(markdown_str: str, file_stub: str) -> None:
+    if not markdown_str:
+        return
+    st.download_button(
+        label="⬇️ Download meal plan (Markdown)",
+        data=markdown_str,
+        file_name=f"{file_stub}.md",
+        mime="text/markdown",
+    )
+    # Optional PDF export (requires pdfkit OR kaleido)
+    try:
+        import pdfkit  # type: ignore
+
+        pdf_bytes = pdfkit.from_string(markdown_str, False)
+        st.download_button(
+            label="⬇️ Download PDF", data=pdf_bytes, file_name=f"{file_stub}.pdf", mime="application/pdf"
+        )
+    except Exception:
+        st.info("Install **pdfkit** + `wkhtmltopdf` for PDF export.")
+
+
+# ---------------------------------------------------------------------------
+# 🔗 Section 4 – Shopping list generator
+# ---------------------------------------------------------------------------
+
+_INGR_RGX = re.compile(r"\*\*Ingredients?\*\*[\s\S]*?\n(?P<list>(?:[-*] .+\n)+)")
+
+
+def extract_ingredients_from_plan(md: str) -> pd.DataFrame:
+    """Naïvely parse markdown meal plan and return DataFrame[ingredient, qty]."""
+    matches = _INGR_RGX.findall(md)
+    rows: List[Tuple[str, int]] = []
+    for block in matches:
+        for line in block.splitlines():
+            line = line.lstrip("-* ").strip()
+            if not line:
+                continue
+            qty, *name_parts = line.split(" ")
+            try:
+                qty_val = float(qty)
+                name = " ".join(name_parts)
+            except ValueError:
+                qty_val = 1.0
+                name = " ".join([qty] + name_parts)
+            rows.append((name.lower(), qty_val))
+    df = pd.DataFrame(rows, columns=["ingredient", "quantity"])
+    df = df.groupby("ingredient", as_index=False).sum().sort_values("ingredient")
+    return df
+
+
+def shopping_list_ui(md: str) -> None:
+    st.subheader("🧾 Shopping List")
+    df = extract_ingredients_from_plan(md)
+    st.dataframe(df, use_container_width=True)
+    csv_bytes = df.to_csv(index=False).encode()
+    st.download_button("Download CSV", csv_bytes, file_name="shopping_list.csv", mime="text/csv")
+
+
+# ---------------------------------------------------------------------------
+# 🔗 Section 5 – Calorie & weight tracker (Plotly)
+# ---------------------------------------------------------------------------
+
+def tracker_ui() -> None:
+    st.header("📈 Daily Calorie & Weight Tracker")
+
+    if "log" not in st.session_state:
+        st.session_state.log = pd.DataFrame(
+            columns=["date", "meal", "calories", "weight", "target"],
+        )
+
+    with st.form("log_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            date = st.date_input("Date", dt.date.today())
+            meal = st.text_input("Meal / Dish name")
+        with col2:
+            cal = st.number_input("Calories (kcal)", 0, 3000, step=10)
+            weight = st.number_input("Weight (kg) (optional)", 0.0, 300.0, step=0.1)
+        submitted = st.form_submit_button("Add entry")
+
+    if submitted:
+        target = st.session_state.get("recommended_calories", None)
+        st.session_state.log = pd.concat(
+            [
+                st.session_state.log,
+                pd.DataFrame([[date, meal, cal, weight or None, target]], columns=st.session_state.log.columns),
+            ],
+            ignore_index=True,
+        )
+        st.success("Entry added!")
+
+    log_df = st.session_state.log.sort_values("date")
+    if not log_df.empty:
+        st.subheader("History")
+        st.dataframe(log_df, use_container_width=True, height=200)
+        fig = px.line(
+            log_df,
+            x="date",
+            y=["calories", "target"],
+            markers=True,
+            labels={"value": "Calories"},
+            title="Actual intake vs Target",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        # Weight chart if available
+        if log_df["weight"].notna().any():
+            fig2 = px.line(
+                log_df.dropna(subset=["weight"]),
+                x="date",
+                y="weight",
+                markers=True,
+                title="Weight trend (kg)",
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Example integration snippets – place inside your main Streamlit script
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    st.title("🔌 Demo – Enhanced Blocks")
+
+    # 1️⃣ Personal goal block – always available in sidebar
+    sidebar_goal_block()
+
+    # 2️⃣ Preference form (simulate inside this demo)
+    curr_section = st.selectbox("Section", ("Recipes", "Make Meal Plans", "Calorie Tracker"))
+    prefs = preference_form(curr_section)
+    st.write("Current Preferences:", prefs)
+
+    # 3️⃣ Meal‑plan export / shopping list demo
+    if curr_section == "Make Meal Plans":
+        dummy_md = """## Weekly Meal Plan\n\n| Day | Meal | Dish | Estimated Calories |\n|-----|------|------|--------------------|\n| Mon | Lunch | Mapo Tofu | 450 |\n"""
+        st.markdown(dummy_md)
+        make_download_buttons(dummy_md, "weekly_plan")
+        if st.button("🧾 Generate shopping list"):
+            shopping_list_ui(dummy_md)
+
+    # 5️⃣ Tracker demo
+    if curr_section == "Calorie Tracker":
+        tracker_ui()
