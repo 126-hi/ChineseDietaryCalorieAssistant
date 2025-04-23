@@ -1,26 +1,23 @@
-# --- Core runtime ----------------------------------------------------
+# ── Core ──────────────────────────────────────────────────────────────
 streamlit>=1.34
-openai>=1.25          # Chat / DALL·E API
-# --- LangChain stack ----
-langchain==0.2.*          # main orchestrator
-langchain-community>=0.0.8
+openai>=1.25
+
+# LangChain stack (v0.2)
+langchain==0.2.*              # orchestrator
 langchain-core>=0.2
+langchain-community>=0.0.8
+faiss-cpu>=1.8.0              # vector store
 
-faiss-cpu>=1.8.0      # Vector store (use faiss-gpu if you have a GPU)
-pypdf2>=3.15           # PDF parsing (pulled in by LangChain)
-pillow>=10.0          # Image display (indirect dependency of Streamlit)
+# PDF parsing for RAG
+pypdf>=3.15                   # lightweight reader
 
-# --- Extra features --------------------------------------------------
-plotly>=5.20          # Trend charts
+# Data & visualisation
 pandas>=2.2
+plotly>=5.20
+pillow>=10.0                  # image display
 
-# Weekly‑plan export → PDF  (choose one, kaleido recommended)
-kaleido>=0.2.1        # Static export for Plotly; can also render PDFs
-pdfkit>=1.0           # Markdown → PDF
-#  pdfkit requires wkhtmltopdf installed at the OS level (brew / apt / choco)
+# HTTP requests (HuggingFace/Nutritionix)
+requests>=2.31
 
-# Optional: very fast PDF parsing for large files
-pymupdf>=1.24
-
-# Optional: nicer interactive tables in Streamlit
-streamlit-aggrid>=0.3
+# Optional: .env file loading (if you prefer env vars over sidebar inputs)
+python-dotenv>=1.0
