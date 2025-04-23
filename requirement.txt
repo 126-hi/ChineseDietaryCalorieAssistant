@@ -1,7 +1,11 @@
 # --- Core runtime ----------------------------------------------------
 streamlit>=1.34
 openai>=1.25          # Chat / DALL·E API
-langchain>=0.2.1
+# --- LangChain stack ----
+langchain==0.2.*          # main orchestrator
+langchain-community>=0.0.8
+langchain-core>=0.2
+
 faiss-cpu>=1.8.0      # Vector store (use faiss-gpu if you have a GPU)
 pypdf2>=3.0           # PDF parsing (pulled in by LangChain)
 pillow>=10.0          # Image display (indirect dependency of Streamlit)
