@@ -172,5 +172,10 @@ elif section=="Photo Calories":
 elif section=="Generate Photo":
     desc=st.text_input("Describe food")
     if st.button("Generate") and desc.strip():
-        url=client.images.generate(model="dall-e-3",prompt=desc,n
+        url = client.images.generate(
+        model="dall-e-3",
+        prompt=desc,
+        n=1,
+        size="1024x1024"
+      )
 
