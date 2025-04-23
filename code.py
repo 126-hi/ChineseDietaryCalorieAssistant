@@ -53,6 +53,11 @@ if not api_key:
 openai.api_key = api_key
 client = openai.OpenAI(api_key=api_key)
 
+store = FAISS.from_documents(
+    splits,
+    OpenAIEmbeddings(openai_api_key=api_key)  
+)
+
 # Goal calculator ------------------------------------------------------------
 _ACTIVITY = {"Sedentary":1.2,"Light":1.375,"Moderate":1.55,"Active":1.725,"Very Active":1.9}
 _GOAL = {"Lose":-500,"Maintain":0,"Gain":300}
@@ -178,4 +183,3 @@ elif section=="Generate Photo":
         n=1,
         size="1024x1024"
       )
-
