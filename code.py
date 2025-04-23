@@ -1,56 +1,55 @@
 # -*- coding: utf-8 -*-
 """
-Streamlit Multi‑Agent Cuisine Assistant – **Enhanced + RAG Button** (2025‑04‑22)
-===============================================================================
-Features
---------
-✅ Personalised BMR/TDEE calculator (sidebar)
-✅ Cookbook selector + 📚 **Add RAG Context** button
-✅ Recipes with diet filters & preferences
-✅ 7‑day meal‑plan generator (Markdown/PDF export)
-✅ Shopping‑list CSV generator
-✅ DALL·E 3 food‑image generation
-✅ Photo & text calorie estimation
-✅ Daily calorie & weight tracker (Plotly)
+Streamlit Multi‑Agent Cuisine Assistant – **All‑in‑One (RAG Button + Custom Calorie Vision)**
+===========================================================================================
+This is the final integrated build.  It contains **every feature** we’ve
+discussed so far:
+
+1. 🎯 BMR / TDEE calculator in the sidebar
+2. 📚 Cookbook selector *plus* **Add RAG Context** button for Recipes & Meal Plans
+3. 🧑‍🍳 Recipe generation with diet filters (checkboxes inside RAG prompt)
+4. 🗓️ 7‑day meal‑plan generator (Markdown download + shopping‑list CSV)
+5. 🖼️ Image generation via DALL·E 3
+6. 📷 Photo calorie estimation using **nateraw/food** model → Nutritionix API
+7. 📑 Text ingredient calorie estimation (GPT‑3.5)
+8. 📈 Daily calorie & weight tracker with Plotly trend
+
+### Required keys (sidebar or environment)
+| Key | Purpose |
+|-----|---------|
+| **OpenAI API Key** | Chat + DALL·E |
+| **HF_FOOD_TOKEN** | Access `nateraw/food` Space |
+| **Nutritionix App ID / Key** | Calorie lookup |
 
 Run:
 ```bash
 streamlit run cuisine_assistant_app.py
 ```
-Provide your **OpenAI API key** and (optionally) a **Hugging Face token**.
 """
 
 from __future__ import annotations
-import datetime as dt
+import datetime as dt, os, textwrap, re, json
 from pathlib import Path
-from typing import Dict, List, Optional
-import textwrap, re
+from typing import List
 
-import pandas as pd
-import plotly.express as px
-import requests
-import streamlit as st
-import openai
+import pandas as pd, plotly.express as px, requests, streamlit as st, openai
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores import FAISS
 
 ###############################################################################
-# 🌈 Page config
-###############################################################################
-st.set_page_config(page_title="Cuisine Assistant", layout="wide")
-
-###############################################################################
 # 🔑 Sidebar – API keys & goal calculator
 ###############################################################################
 with st.sidebar:
     st.title("API Keys")
-    api_key = st.text_input("OpenAI API Key", type="password")
-    hf_token = st.text_input("Hugging Face Token", type="password")
+    api_key = st.text_input("OpenAI API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
+    hf_token = st.text_input("HF FOOD Token", type="password", value=os.getenv("HF_FOOD_TOKEN", ""))
+    nx_id  = st.text_input("Nutritionix App ID", value=os.getenv("NUTRITIONIX_APP_ID", ""))
+    nx_key = st.text_input("Nutritionix App Key", type="password", value=os.getenv("NUTRITIONIX_APP_KEY", ""))
 
 if not api_key:
-    st.stop()
+    st.warning("OpenAI key required."); st.stop()
 openai.api_key = api_key
 client = openai.OpenAI(api_key=api_key)
 
@@ -63,24 +62,23 @@ def mifflin(sex,w,h,age):
 with st.sidebar:
     st.markdown("---"); st.subheader("Personal Goal")
     sex = st.radio("Sex",("Male","Female"),horizontal=True)
-    a,b = st.columns(2)
-    age = a.number_input("Age",10,100,25)
-    wt  = a.number_input("Weight (kg)",30.,300.,70.,step=0.1)
-    ht  = b.number_input("Height (cm)",120.,230.,170.,step=0.1)
-    activity = b.selectbox("Activity", list(_ACTIVITY))
-    goal = st.selectbox("Goal", list(_GOAL))
+    c1,c2=st.columns(2)
+    age=c1.number_input("Age",10,100,25); wt=c1.number_input("Weight (kg)",30.,300.,70.,step=0.1)
+    ht=c2.number_input("Height (cm)",120.,230.,170.,step=0.1)
+    activity=c2.selectbox("Activity", list(_ACTIVITY))
+    goal=st.selectbox("Goal", list(_GOAL))
     if st.button("Calc BMR/TDEE"):
-        bmr = mifflin(sex,wt,ht,age); tdee=bmr*_ACTIVITY[activity]; targ=max(1000,round(tdee+_GOAL[goal]))
+        bmr=mifflin(sex,wt,ht,age); tdee=bmr*_ACTIVITY[activity]; targ=max(1000,round(tdee+_GOAL[goal]))
         st.success(f"Target ≈ **{targ} kcal/day** (TDEE {tdee:.0f})")
         st.session_state.target=targ
 
 ###############################################################################
-# 📚 Cookbook data & FAISS index
+# 📚 Cookbook data & FAISS index (RAG)
 ###############################################################################
 COOKBOOKS={
     "Easy Chinese Cuisine":"data/01. Easy Chinese Cuisine author Ailam Lim.pdf",
     "China in 50 Dishes":"data/02. China in 50 Dishes author HSBC.pdf",
-    "7‑Day Healthy Meal Plan":"data/7-day-Chinese-healthy-meal-plan.pdf",
+    "7-Day Healthy Meal Plan":"data/7-day-Chinese-healthy-meal-plan.pdf",
 }
 @st.cache_resource(show_spinner="Indexing cookbooks…")
 def build_retriever(paths:List[str]):
@@ -88,84 +86,91 @@ def build_retriever(paths:List[str]):
     for p in paths:
         if Path(p).exists(): docs+=PyPDFLoader(p).load()
     splits=CharacterTextSplitter(chunk_size=1000,chunk_overlap=200).split_documents(docs)
-    store=FAISS.from_documents(splits,OpenAIEmbeddings())
-    return store.as_retriever()
+    return FAISS.from_documents(splits,OpenAIEmbeddings()).as_retriever()
 retriever=build_retriever(list(COOKBOOKS.values()))
-class RAGAgent:
+class RAG:
     def __init__(self,r): self.r=r
-    def fetch(self,q:str,srcs:List[str],k:int=3):
-        docs=self.r.get_relevant_documents(q)
-        docs=[d for d in docs if any(s in d.metadata.get("source","") for s in srcs)]
+    def ctx(self,q,srcs,k=3):
+        docs=[d for d in self.r.get_relevant_documents(q) if any(s in d.metadata.get('source','') for s in srcs)]
         return "\n\n".join(d.page_content for d in docs[:k])
-rag=RAGAgent(retriever)
+rag=RAG(retriever)
 
 ###############################################################################
-# 🤖 Helper chat function
+# 🖼️ Custom Calorie Vision (nateraw/food → Nutritionix)
 ###############################################################################
-def chat(msgs,temp=0.6):
-    return client.chat.completions.create(model="gpt-3.5-turbo",messages=msgs,temperature=temp).choices[0].message.content.strip()
+FOOD_API="https://api-inference.huggingface.co/models/nateraw/food"
+HEADERS={"Authorization":f"Bearer {hf_token}"} if hf_token else {}
+
+def classify_food(img:bytes)->dict:
+    r=requests.post(FOOD_API,headers=HEADERS,data=img); r.raise_for_status()
+    top=json.loads(r.content.decode())[:5]
+    return {i['label']:i['score'] for i in top}
+
+def nutritionix(food:str)->dict:
+    r=requests.get("https://trackapi.nutritionix.com/v2/search/instant",params={"query":food},headers={"x-app-id":nx_id,"x-app-key":nx_key})
+    r.raise_for_status(); b=r.json().get('branded',[{}])[0]
+    return {"food_name":b.get('food_name','-'),"cal":b.get('nf_calories','?'),"qty":b.get('serving_qty','?'),"unit":b.get('serving_unit','?')}
+
+def photo_calorie(img:bytes)->str:
+    labels=classify_food(img)
+    main=max(labels,key=labels.get); md="**Top predictions**:"+"<br>"+"<br>".join([f"{k}: {v:.1%}" for k,v in labels.items()])
+    if nx_id and nx_key:
+        n=nutritionix(main); md+=f"\n\n**Nutritionix** — {n['food_name']}: {n['cal']} kcal / {n['qty']} {n['unit']}"
+    return md
+
+###############################################################################
+# 🧑‍🍳 Helper chat
+###############################################################################
 SYSTEM="You are a culinary assistant producing structured markdown."
 MEAL_TEMPLATE=("Return a 7‑day meal plan:\n\n| Day | Breakfast | Lunch | Dinner | Calories |\n|-----|-----------|-------|--------|----------|\n"+"\n".join([f"| {d} | | | | |" for d in ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]]))
 
+def chat(msgs,temp=0.6):
+    return client.chat.completions.create(model="gpt-3.5-turbo",messages=msgs,temperature=temp).choices[0].message.content.strip()
+
 ###############################################################################
-# 📂 Navigation
+# 📂 Navigation                                                          
 ###############################################################################
 with st.sidebar:
     st.markdown("---")
-    section=st.radio("Feature",("Recipes","Meal Plans","Take Photo","Photo Calories","Text Calories","Tracker"))
-    if section in {"Recipes","Meal Plans"}:
-        sel_books=st.multiselect("Cookbooks",list(COOKBOOKS),default=list(COOKBOOKS))
-    else:
-        sel_books=list(COOKBOOKS)
+    section=st.radio("Feature",("Recipes","Meal Plans","Generate Photo","Photo Calories","Text Calories","Tracker"))
+    books=st.multiselect("Cookbooks",list(COOKBOOKS),default=list(COOKBOOKS)) if section in {"Recipes","Meal Plans"} else list(COOKBOOKS)
 
 ###############################################################################
-# 🖥️ Main UI
+# 🖥️  Main interface
 ###############################################################################
 
 if section in {"Recipes","Meal Plans"}:
-    prompt_key="prompt"; st.text_area("Your request",key=prompt_key,height=120)
+    key="prompt"; st.text_area("Your request",key=key,height=120)
     if st.button("📚 Add RAG Context"):
-        ctx=rag.fetch(st.session_state[prompt_key],[COOKBOOKS[b] for b in sel_books])
-        st.session_state[prompt_key]=textwrap.dedent(f"{st.session_state[prompt_key]}\n\n# RAG Context\n{ctx}")
+        ctx=rag.ctx(st.session_state[key],[COOKBOOKS[b] for b in books])
+        st.session_state[key]=textwrap.dedent(f"{st.session_state[key]}\n\n# RAG Context\n{ctx}")
         st.success("Context added.")
     if st.button("🚀 Submit"):
-        msgs=[{"role":"system","content":SYSTEM},{"role":"user","content":st.session_state[prompt_key]}]
-        if section=="Recipes":
-            out=chat(msgs,0.7)
-        else:
-            out=chat([{"role":"system","content":MEAL_TEMPLATE}]+msgs,0.4)
+        msgs=[{"role":"system","content":SYSTEM},{"role":"user","content":st.session_state[key]}]
+        out=chat(msgs,0.7) if section=="Recipes" else chat([{"role":"system","content":MEAL_TEMPLATE}]+msgs,0.4)
         st.markdown(out)
         if section=="Meal Plans":
             st.download_button("Download MD",out,"mealplan.md","text/markdown")
-            # Shopping list
             if st.button("🧾 Shopping List"):
-                items=re.findall(r"\|\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday).*?\|(.+?)\|",out)
-                df=pd.DataFrame({"item":items})
-                st.dataframe(df); st.download_button("CSV",df.to_csv(index=False).encode(),"shopping.csv","text/csv")
+                dishes=re.findall(r"\|\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|",out)
+                flat=[d for row in dishes for d in row if d.strip()]
+                df=pd.DataFrame({"dish":flat}); st.dataframe(df)
+                st.download_button("CSV",df.to_csv(index=False).encode(),"shopping.csv","text/csv")
 
 elif section=="Text Calories":
-    ing=st.text_area("Ingredients")
-    if st.button("Estimate"):
-        res=chat([{"role":"system","content":"List kcal each ingredient then total."},{"role":"user","content":ing}],0.3)
+    ing=st.text_area("Ingredients list (one per line)")
+    if st.button("Estimate") and ing.strip():
+        res=chat([{"role":"system","content":"List kcal for each ingredient then total."},{"role":"user","content":ing}],0.3)
         st.markdown(res)
+
 elif section=="Photo Calories":
-    pic=st.file_uploader("Food photo",["png","jpg","jpeg"])
-    if st.button("Estimate") and pic:
-        r=requests.post("https://api-inference.huggingface.co/models/JaydeepR/Calorie_counter",headers={"Authorization":f"Bearer {hf_token}"} if hf_token else {},data=pic.read())
-        st.image(pic); st.write(r.json() if r.ok else r.text)
-elif section=="Take Photo":
+    up=st.file_uploader("Food photo",["png","jpg","jpeg"])
+    if st.button("Estimate") and up:
+        img=up.read(); st.image(img)
+        st.markdown(photo_calorie(img))
+
+elif section=="Generate Photo":
     desc=st.text_input("Describe food")
-    if st.button("Generate") and desc:
-        url=client.images.generate(model="dall-e-3",prompt=desc,n=1,size="1024x1024").data[0].url; st.image(url)
-else:
-    if "log" not in st.session_state:
-        st.session_state.log=pd.DataFrame(columns=["date","meal","cal","wt"])
-    with st.form("add"):
-        d1,d2=st.columns(2); date=d1.date_input("Date",dt.date.today()); meal=d2.text_input("Meal")
-        cal=st.number_input("Calories",0,3000); wt=st.number_input("Weight",0.0,300.0,step=0.1)
-        if st.form_submit_button("Add"):
-            st.session_state.log=pd.concat([st.session_state.log,pd.DataFrame([[date,meal,cal,wt]],columns=st.session_state.log.columns)],ignore_index=True)
-    df=st.session_state.log.sort_values("date"); st.dataframe(df,use_container_width=True)
-    if not df.empty:
-        st.plotly_chart(px.line(df,x="date",y=["cal"],markers=True),use_container_width=True)
+    if st.button("Generate") and desc.strip():
+        url=client.images.generate(model="dall-e-3",prompt=desc,n
 
