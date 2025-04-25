@@ -1,24 +1,32 @@
-# ── Core ──────────────────────────────────────────────────────────────
+# ── Core ───────────────────────────────────────
 streamlit>=1.34
 openai>=1.25
-tiktoken>=0.5.1
+tiktoken>=0.5.1          # for OpenAIEmbeddings
 
-# LangChain stack (v0.2)
-langchain==0.2.*              # orchestrator
+# LangChain stack
+langchain==0.2.*
 langchain-core>=0.2
 langchain-community>=0.0.8
-faiss-cpu>=1.8.0              # vector store
+faiss-cpu>=1.8.0
 
 # PDF parsing for RAG
-pypdf>=3.15                   # lightweight reader
+pypdf>=3.15
 
 # Data & visualisation
 pandas>=2.2
 plotly>=5.20
-pillow>=10.0                  # image display
+pillow>=10.0             # image support
 
-# HTTP requests (HuggingFace/Nutritionix)
+# HTTP / dotenv
 requests>=2.31
-
-# Optional: .env file loading (if you prefer env vars over sidebar inputs)
 python-dotenv>=1.0
+
+# ── YOLOv7 Dependencies ────────────────────────
+torch>=1.13              # or match your CUDA version
+opencv-python>=4.9
+numpy>=1.25
+
+# YOLOv7 helper utilities (required if using custom repo)
+# These may be included via local files if not on PyPI:
+# models.experimental, utils.datasets, utils.general
+# So add instructions in README to clone YOLOv7 repo
