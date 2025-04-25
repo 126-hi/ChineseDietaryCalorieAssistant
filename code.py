@@ -1,39 +1,34 @@
 # -*- coding: utf-8 -*-
 """
-Streamlit Multi‑Agent Cuisine Assistant — FINAL INTEGRATED BUILD (2025‑04‑23)
-=============================================================================
-Includes **all requested functionality** plus latest bug‑fixes:
-
-1. 🎯  BMR/TDEE calculator
-2. 📚  Cookbook selector + **Add RAG Context** button
-3. 🧑‍🍳  Recipes with diet filters
-4. 🗓️  7‑day meal‑plan generator + Markdown/PDF + shopping‑list CSV
-5. 🖼️  DALL·E 3 food‑image generation
-6. 📷  Photo‑calorie estimator (nateraw/food → Nutritionix)
-7. 📑  Text ingredient calorie estimator
-8. 📈  Calorie & weight tracker (Plotly)
+Streamlit Multi-Agent Cuisine Assistant – FINAL REBUILD (YOLOv7 + BMI)
+=======================================================================
+Includes BMI Calculator and integrated YOLOv7 calorie detection (no Gradio)
 
 Run:
 ```bash
-streamlit run cuisine_assistant_app.py
+streamlit run cuisine_assistant_app_final.py
 ```
-Fill **OpenAI API key** (required) and optional **HF token + Nutritionix keys** in sidebar.
 """
 
-from __future__ import annotations
-import datetime as dt, os, textwrap, re, json
+import os, textwrap, re, json
 from pathlib import Path
 from typing import List
 
 import pandas as pd
-import plotly.express as px
 import requests
 import streamlit as st
 import openai
+from PIL import Image
+import numpy as np
+import torch
+import cv2
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores import FAISS
+from models.experimental import attempt_load
+from utils.datasets import letterbox
+from utils.general import non_max_suppression, scale_coords
 
 ###############################################################################
 # 🔑 Sidebar – API keys & goal calculator
@@ -41,7 +36,6 @@ from langchain.vectorstores import FAISS
 with st.sidebar:
     st.title("API Keys")
     api_key = st.text_input("OpenAI API Key", type="password", value=os.getenv("OPENAI_API_KEY", ""))
-    hf_token = st.text_input("HF FOOD Token", type="password", value=os.getenv("HF_FOOD_TOKEN", ""))
     nx_id  = st.text_input("Nutritionix App ID", value=os.getenv("NUTRITIONIX_APP_ID", ""))
     nx_key = st.text_input("Nutritionix App Key", type="password", value=os.getenv("NUTRITIONIX_APP_KEY", ""))
 
@@ -56,6 +50,7 @@ _GOAL = {"Lose":-500,"Maintain":0,"Gain":300}
 
 def mifflin(sex,w,h,age):
     return 10*w + 6.25*h - 5*age + (5 if sex=="Male" else -161)
+
 with st.sidebar:
     st.markdown("---"); st.subheader("Personal Goal")
     sex = st.radio("Sex", ("Male","Female"), horizontal=True)
@@ -99,31 +94,6 @@ class RAG:
 rag = RAG(retriever)
 
 ###############################################################################
-# 🖼️  Custom Calorie Vision (nateraw/food → Nutritionix)
-###############################################################################
-FOOD_API = "https://api-inference.huggingface.co/models/nateraw/food"
-HEADERS  = {"Authorization": f"Bearer {hf_token}"} if hf_token else {}
-
-def classify_food(img: bytes) -> dict:
-    r = requests.post(FOOD_API, headers=HEADERS, data=img)
-    r.raise_for_status()
-    return {d['label']: d['score'] for d in json.loads(r.content.decode())[:5]}
-
-def nutritionix(food: str) -> dict:
-    r = requests.get("https://trackapi.nutritionix.com/v2/search/instant", params={"query": food}, headers={"x-app-id": nx_id, "x-app-key": nx_key})
-    r.raise_for_status(); b = r.json().get('branded', [{}])[0]
-    return {"food_name": b.get('food_name','-'), "cal": b.get('nf_calories','?'), "qty": b.get('serving_qty','?'), "unit": b.get('serving_unit','?')}
-
-def photo_calorie(img: bytes) -> str:
-    labels = classify_food(img)
-    main   = max(labels, key=labels.get)
-    md = "**Top predictions**:" + "<br>" + "<br>".join([f"{k}: {v:.1%}" for k,v in labels.items()])
-    if nx_id and nx_key:
-        n = nutritionix(main)
-        md += f"\n\n**Nutritionix** — {n['food_name']}: {n['cal']} kcal / {n['qty']} {n['unit']}"
-    return md
-
-###############################################################################
 # 🤖 Chat helper & templates
 ###############################################################################
 SYSTEM = "You are a culinary assistant producing structured markdown."
@@ -134,17 +104,53 @@ def chat(msgs, temp=0.6):
     return client.chat.completions.create(model="gpt-3.5-turbo", messages=msgs, temperature=temp).choices[0].message.content.strip()
 
 ###############################################################################
+# 📦 YOLOv7 Calorie Estimator - Embedded
+###############################################################################
+model = attempt_load("best.pt", map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+model.eval()
+class_names = model.names
+nutritional_data = {
+    "egg": {"calories": 68}, "rice": {"calories": 130}, "roti": {"calories": 71},
+    "idli": {"calories": 58}, "dal": {"calories": 120}, "salad": {"calories": 35},
+    "vada": {"calories": 132}, "curd": {"calories": 98}, "omelette": {"calories": 154},
+}
+
+def detect_and_overlay_nutrition_streamlit(image, conf_threshold=0.25, iou_threshold=0.45):
+    img = np.array(image)
+    img_resized = letterbox(img, new_shape=640)[0]
+    img_resized = img_resized[:, :, ::-1].transpose(2, 0, 1)
+    img_tensor = torch.from_numpy(np.ascontiguousarray(img_resized)).float().div(255.0).unsqueeze(0)
+
+    device = next(model.parameters()).device
+    img_tensor = img_tensor.to(device)
+
+    with torch.no_grad():
+        pred = model(img_tensor)[0]
+        pred = non_max_suppression(pred, conf_threshold, iou_threshold, agnostic=False)
+
+    for det in pred:
+        if len(det):
+            det[:, :4] = scale_coords(img_tensor.shape[2:], det[:, :4], img.shape).round()
+            for *xyxy, conf, cls in det:
+                cls_name = class_names[int(cls)]
+                nutrition = nutritional_data.get(cls_name, None)
+                cv2.rectangle(img, (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3])), (0, 255, 0), 2)
+                if nutrition:
+                    label = f"{cls_name}: {nutrition['calories']} kcal"
+                    cv2.putText(img, label, (int(xyxy[0]), int(xyxy[1]) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+    return img
+
+###############################################################################
 # 📂 Navigation
 ###############################################################################
 with st.sidebar:
     st.markdown("---")
-    section = st.radio("Feature", ("Recipes","Meal Plans","Generate Photo","Photo Calories","Text Calories","Tracker"))
+    section = st.radio("Feature", ("Recipes","Meal Plans","Text Calories","Tracker","BMI Calculator","YOLO Calorie"))
     books   = st.multiselect("Cookbooks", list(COOKBOOKS), default=list(COOKBOOKS)) if section in {"Recipes","Meal Plans"} else list(COOKBOOKS)
 
 ###############################################################################
 # 🖥️  Main interface
 ###############################################################################
-
 if section in {"Recipes","Meal Plans"}:
     key = "prompt"; st.text_area("Your request", key=key, height=120)
     if st.button("📚 Add RAG Context"):
@@ -153,7 +159,7 @@ if section in {"Recipes","Meal Plans"}:
         st.success("Context added.")
     if st.button("🚀 Submit") and st.session_state.get(key):
         msgs = [{"role":"system","content":SYSTEM},{"role":"user","content":st.session_state[key]}]
-        out  = chat(msgs,0.7) if section=="Recipes" else chat([{"role":"system","content":MEAL_TEMPLATE}]+msgs,0.4)
+        out  = chat(msgs,0.7) if section=="Recipes" else chat([{ "role":"system","content":MEAL_TEMPLATE }]+msgs,0.4)
         st.markdown(out)
         if section=="Meal Plans":
             st.download_button("Download MD", out, "mealplan.md", "text/markdown")
@@ -167,5 +173,51 @@ elif section == "Text Calories":
     ing = st.text_area("Ingredients list (one per line)")
     if st.button("Estimate") and ing.strip():
         res = chat([{"role":"system","content":"List kcal for each ingredient then total."},{"role":"user","content":ing}],0.3)
-        st.markdown
+        st.markdown(res)
+
+elif section == "BMI Calculator":
+    st.title('Welcome to BMI Calculator')
+    weight = st.number_input('Enter your weight in kgs')
+    status = st.radio('Select your height format:', ('cms','meters','feet'))
+    try:
+        if status == 'cms':
+            height = st.number_input('Height in centimeters')
+            bmi = weight / ((height / 100) ** 2)
+        elif status == 'meters':
+            height = st.number_input('Height in meters')
+            bmi = weight / (height ** 2)
+        elif status == 'feet':
+            height = st.number_input('Height in feet')
+            bmi = weight / ((height / 3.28) ** 2)
+    except ZeroDivisionError:
+        st.error("Height can't be zero!")
+
+    if st.button('Calculate BMI'):
+        st.write(f'Your BMI index is **{round(bmi, 2)}**.')
+        if bmi < 16:
+            st.error('You are extremely underweight')
+        elif bmi < 18.5:
+            st.warning('You are underweight')
+        elif bmi < 25:
+            st.success('You are healthy')
+        elif bmi < 30:
+            st.warning('You are overweight')
+        else:
+            st.error('You are extremely overweight')
+        st.balloons()
+
+elif section == "YOLO Calorie":
+    st.subheader("YOLOv7 Food Calorie Estimator")
+    st.markdown("Upload a food photo and detect calorie content using your trained YOLOv7 model.")
+
+    uploaded = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
+    conf = st.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05)
+    iou = st.slider("IoU Threshold", 0.0, 1.0, 0.45, 0.05)
+
+    if uploaded:
+        image = Image.open(uploaded).convert("RGB")
+        st.image(image, caption="Original", use_column_width=True)
+        result = detect_and_overlay_nutrition_streamlit(image, conf_threshold=conf, iou_threshold=iou)
+        st.image(result, caption="Detected", use_column_width=True)
+
 
