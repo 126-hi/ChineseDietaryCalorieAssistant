@@ -9,6 +9,8 @@ Run:
 streamlit run cuisine_assistant_app_final.py
 ```
 """
+import sys
+sys.path.append("./yolov7")
 
 import os, textwrap, re, json
 from pathlib import Path
