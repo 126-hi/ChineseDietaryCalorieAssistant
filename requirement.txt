@@ -21,10 +21,15 @@ pillow>=10.0             # Image support for Streamlit
 requests>=2.31
 python-dotenv>=1.0       # For environment variable management
 
-# ── YOLOv7 Dependencies ───────────────────────────────
-torch>=1.13              # Deep learning backend (adjust for CUDA if needed)
-opencv-python>=4.9       # Image processing
-numpy>=1.25              # Tensor operations
+# ── YOLOv7 Dependencies ───────────────────────
+# Install CPU-only version of torch (compatible with Codespaces)
+torch==2.1.0+cpu
+torchvision==0.16.0+cpu
+torchaudio==2.1.0+cpu
+-f https://download.pytorch.org/whl/cpu/torch_stable.html
+
+opencv-python>=4.9
+numpy>=1.25
 
 # ── Important Notes ───────────────────────────────────
 # ⚠️ System Dependency:
