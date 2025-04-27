@@ -1,32 +1,44 @@
-# ── Core ───────────────────────────────────────
+# ── Core ─────────────────────────────────────────────
 streamlit>=1.34
 openai>=1.25
 tiktoken>=0.5.1          # for OpenAIEmbeddings
 
-# LangChain stack
+# ── LangChain Stack ───────────────────────────────────
 langchain==0.2.*
 langchain-core>=0.2
 langchain-community>=0.0.8
-faiss-cpu>=1.8.0
+faiss-cpu>=1.8.0         # Vector store for retrieval (RAG)
 
-# PDF parsing for RAG
-pypdf>=3.15
+# ── PDF parsing for RAG ───────────────────────────────
+pypdf>=3.15              # Lightweight PDF loader
 
-# Data & visualisation
+# ── Data & Visualisation ──────────────────────────────
 pandas>=2.2
 plotly>=5.20
-pillow>=10.0             # image support
+pillow>=10.0             # Image support for Streamlit
 
-# HTTP / dotenv
+# ── HTTP & Environment ────────────────────────────────
 requests>=2.31
-python-dotenv>=1.0
+python-dotenv>=1.0       # For environment variable management
 
-# ── YOLOv7 Dependencies ────────────────────────
-torch>=1.13              # or match your CUDA version
-opencv-python>=4.9
-numpy>=1.25
+# ── YOLOv7 Dependencies ───────────────────────────────
+torch>=1.13              # Deep learning backend (adjust for CUDA if needed)
+opencv-python>=4.9       # Image processing
+numpy>=1.25              # Tensor operations
 
-# YOLOv7 helper utilities (required if using custom repo)
-# These may be included via local files if not on PyPI:
-# models.experimental, utils.datasets, utils.general
-# So add instructions in README to clone YOLOv7 repo
+# ── Important Notes ───────────────────────────────────
+# ⚠️ System Dependency:
+#   If you encounter ImportError: libGL.so.1 missing (typically on Linux / Codespaces),
+#   please install system package manually:
+#   
+#   sudo apt update && sudo apt install -y libgl1-mesa-glx
+#
+# ⚠️ YOLOv7 Local Repository:
+#   This project requires yolov7 source code locally.
+#   Please clone yolov7 repository into project directory:
+#
+#   git clone https://github.com/WongKinYiu/yolov7
+#
+#   Ensure yolov7/ contains: models/, utils/, detect.py etc.
+
+
