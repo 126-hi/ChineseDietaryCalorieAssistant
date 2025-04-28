@@ -173,10 +173,13 @@ class_names = model.names if hasattr(model, "names") else []
 nutri_map = {"egg":68,"rice":130,"salad":35}
 
 def _pre(image):
-    arr = np.array(image)
-    r   = letterbox(arr, 640)[0]
-    r = r[:, :, ::-1].transpose(2, 0, 1)
-    return torch.from_numpy(np.ascontiguousarray(r)).float().div(255).unsqueeze(0), arr
+
+    arr = np.array(image.convert("RGB"))
+
+    r = letterbox(arr, 640)[0]          # (H,W,3)
+    r = r[:, :, ::-1].transpose(2, 0, 1)  # BGR → RGB，HWC → CHW
+    r = torch.from_numpy(np.ascontiguousarray(r)).float().div(255).unsqueeze(0)
+    return r, arr
 
 def detect(img):
     t,a=_pre(img)
