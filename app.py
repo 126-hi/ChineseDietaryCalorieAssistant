@@ -1,23 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Streamlit Multi-Agent Cuisine Assistant – **Fully-Integrated Final Build**  
+Streamlit Multi-Agent Cuisine Assistant – Fully-Integrated Final Build (修正版)
 =======================================================================
-Features
---------
-* 🎨 Pastel grey-blue UI theme (custom CSS)
-* 📜 System prompt persisted in `st.session_state`
-* 🖼️ Home page recipe card grid (covers of all cookbooks)
-* 📅 FullCalendar month view for meal-plan scheduling (`streamlit-calendar`)
-* 🧑‍🍳 Recipes & 7-day meal-plan generator (OpenAI GPT-3.5 + LangChain RAG)
-* 🖼️ YOLOv7 calorie detection (weights in `weights/best.pt`, PyTorch 2.6-safe)
-* 🩺 BMI calculator
-
-Run locally
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-Run in GitHub Codespace → auto-installs via `devcontainer.json`.
 """
 
 ###############################################################################
@@ -54,6 +38,7 @@ html,body,[class*='css']{background-color:var(--bg)!important;}
 .stApp{background-color:var(--bg);}
 .stSidebar{background-color:var(--sidebar);} 
 .stButton>button{background:var(--primary);color:var(--white);border:0;padding:6px 16px;border-radius:6px}
+.stButton>button:hover{background:#5a7bad}
 .stMarkdown h1,h2,h3{color:var(--primary);} 
 </style>
 """,unsafe_allow_html=True)
@@ -68,7 +53,7 @@ with st.sidebar:
     nx_key  = st.text_input("Nutritionix App Key", type="password", value=os.getenv("NUTRITIONIX_APP_KEY", ""))
 
 if not api_key:
-    st.warning("ℹ️ Enter your OpenAI key to continue …")
+    st.warning("\u2139\ufe0f Enter your OpenAI key to continue …")
     st.stop()
 
 openai.api_key = api_key
@@ -79,7 +64,7 @@ client = openai.OpenAI(api_key=api_key)
 ###############################################################################
 SYSTEM_PROMPT = (
     "You are a culinary assistant who helps users create authentic Chinese recipes based on available ingredients.\n"
-    "Provide a structured response with dish name (EN & CN), ingredients list, step-by-step instructions, and cooking tips." )
+    "Provide a structured response with dish name (EN & CN), ingredients list, step-by-step instructions, and cooking tips.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role":"system","content":SYSTEM_PROMPT}]
@@ -116,27 +101,34 @@ def chat(msgs,temp=0.6):
 @st.cache_resource(show_spinner="Loading YOLOv7 …")
 def load_model(path="weights/best.pt"):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model  = attempt_load(path,map_location=device,weights_only=False)
+    try:
+        model = attempt_load(path,map_location=device,weights_only=False)
+    except Exception as e:
+        st.error(f"Error loading YOLO model: {e}")
+        st.stop()
     model.to(device).eval();return model,device
 
-model,device = load_model(); class_names = model.names
+model,device = load_model()
+class_names = model.names
 nutri = {"egg":68,"rice":130,"salad":35}
-
-def detect(img,conf=0.25,iou=0.45):
-    t,a = preprocess(img:=Image.open(img).convert("RGB")) if isinstance(img,str) else preprocess(img)
-    t = t.to(device)
-    with torch.no_grad(): pred = non_max_suppression(model(t)[0],conf,iou)[0]
-    if pred is not None and len(pred):
-        pred[:,:4] = scale_coords(t.shape[2:],pred[:,:4],a.shape).round()
-        for *xy,conf,cls in pred:
-            name = class_names[int(cls)]; kcal = nutri.get(name,'?')
-            cv2.rectangle(a,(int(xy[0]),int(xy[1])),(int(xy[2]),int(xy[3])),(0,255,0),2)
-            cv2.putText(a,f"{name}:{kcal}kcal",(int(xy[0]),int(xy[1])-6),0,0.5,(0,0,0),2)
-    return a
 
 def preprocess(image):
     arr = np.array(image); r = letterbox(arr,640)[0]; r = r[:,:,::-1].transpose(2,0,1)
     return torch.from_numpy(np.ascontiguousarray(r)).float().div(255).unsqueeze(0),arr
+
+def detect(image, conf=0.25, iou=0.45):
+    t, a = preprocess(image)
+    t = t.to(device)
+    with torch.no_grad():
+        pred = non_max_suppression(model(t)[0], conf, iou)[0]
+    if pred is not None and len(pred):
+        pred[:,:4] = scale_coords(t.shape[2:], pred[:,:4], a.shape).round()
+        for *xy, conf, cls in pred:
+            name = class_names[int(cls)]
+            kcal = nutri.get(name, '?')
+            cv2.rectangle(a, (int(xy[0]), int(xy[1])), (int(xy[2]), int(xy[3])), (0,255,0), 2)
+            cv2.putText(a, f"{name}: {kcal}kcal", (int(xy[0]), int(xy[1])-6), 0, 0.5, (0,0,0), 2)
+    return a
 
 ###############################################################################
 # 🗂 Sidebar navigation
@@ -149,7 +141,7 @@ with st.sidebar:
 # 🏠 Home – cookbook covers grid
 ###############################################################################
 if section=="Home":
-    st.header("📚 Cookbooks")
+    st.header("\ud83d\udcda Cookbooks")
     cols = st.columns(3)
     for i,(title,_) in enumerate(COOKBOOKS.items()):
         with cols[i%3]:
@@ -167,31 +159,34 @@ if section in {"Recipes","Meal Plan"}:
         st.session_state.messages.append({"role":"assistant","content":reply})
         st.markdown(reply)
         if section=="Meal Plan":
-            st.session_state.mealplan_md = reply  # 保存给 Calendar
+            st.session_state.mealplan_md = reply
 
 ###############################################################################
 # 📅 Calendar (FullCalendar)
 ###############################################################################
 if section=="Calendar":
-    st.header("📅 Meal Planner")
+    st.header("\ud83d\uddd5\ufe0f Meal Planner")
     ev=[]
     if "mealplan_md" in st.session_state:
         patt=r"\|\s*(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*\|([^|]*)\|([^|]*)\|([^|]*)\|"
-        wk=dt.date.today()
-        for d,br,lun,din in re.findall(patt,st.session_state.mealplan_md):
-            day = wk+dt.timedelta(days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].index(d))
-            for meal,label in zip([br,lun,din],["Breakfast","Lunch","Dinner"]):
-                if meal.strip():
-                    ev.append({"title":f"{meal.strip()} • {label}","start":day.isoformat()})
-    else:
-        ev=[{"title":"Example Dish","start":dt.date.today().isoformat()}]
+        found = re.findall(patt,st.session_state.mealplan_md)
+        if found:
+            wk=dt.date.today()
+            for d,br,lun,din in found:
+                day = wk+dt.timedelta(days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].index(d))
+                for meal,label in zip([br,lun,din],["Breakfast","Lunch","Dinner"]):
+                    if meal.strip():
+                        ev.append({"title":f"{meal.strip()} • {label}","start":day.isoformat()})
+        else:
+            st.warning("No valid meal plan detected!")
     calendar(events=ev,options={"initialView":"dayGridMonth"})
 
 ###############################################################################
 # 🩺 BMI
 ###############################################################################
 if section=="BMI":
-    w=st.number_input("Weight (kg)",0.0,300.0,70.0); h=st.number_input("Height (cm)",0.0,250.0,170.0)
+    w=st.number_input("Weight (kg)",0.0,300.0,70.0)
+    h=st.number_input("Height (cm)",0.0,250.0,170.0)
     if st.button("BMI") and h>0:
         bmi=w/((h/100)**2)
         st.success(f"BMI = {bmi:.1f}")
@@ -201,5 +196,6 @@ if section=="BMI":
 ###############################################################################
 if section=="YOLO":
     up=st.file_uploader("Upload food",type=["jpg","png"])
-    if up: st.image(detect(Image.open(up)),use_column_width=True)
-
+    if up:
+        arr = detect(Image.open(up))
+        st.image(Image.fromarray(arr),use_column_width=True)
