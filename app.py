@@ -178,55 +178,38 @@ if section == "🏠 Home":
 ###############################################################################
 # 🍽️ Recipes / 📅 Meal Plan – RAG Enhanced & Unified Calendar
 ###############################################################################
-if section == "🍽️ Recipes":
-    st.header("🍽️ Recipe Generator")
-    prompt = st.text_area("Describe the dish you want:", key="recipe_prompt", height=120)
-    if st.button("Generate Recipe"):
-        reply = chat_with_cookbook(prompt)
-        st.markdown(reply)
-
 if section == "📅 Meal Plan":
     st.header("📅 Meal Plan & Calendar")
 
-    # 🔹 Input fields
-    ingredients = st.text_input("Ingredients available:", value="tofu, beef, broccoli, garlic, egg")
-    calorie_target = st.number_input("Target Calories per Day:", min_value=500, max_value=4000, value=1500)
+    ing = st.text_input("Ingredients:", value="tofu, beef, broccoli, garlic, egg")
+    kcal = st.number_input("Target kcal / day", 500, 4000, 1500)
 
     if st.button("Generate Meal Plan"):
-        user_request = (
-            f"Create a 7-day Chinese meal plan using: {ingredients}. "
-            f"Each day should be around {calorie_target} calories. "
-            "Format output as a markdown table: Day | Dish | Ingredients | Estimated Calories."
-        )
-        reply = chat_with_cookbook(user_request)
-        st.session_state.mealplan_md = reply
+        prompt = (f"Create a 7-day Chinese meal plan with: {ing}. "
+                  f"≈{kcal} cal/day. "
+                  "Return **only** a markdown table:\n"
+                  "`Day | Dish | Ingredients | Calories`")
+        md = chat_with_cookbook(prompt)
+        st.session_state.mealplan_md = md
 
-        # 🔹 Parse structured meal plan for Calendar
-        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        mealplan_list = []
-        for day in days:
-            pattern = fr"{day}\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)"
-            match = re.search(pattern, reply)
-            if match:
-                dish = match.group(1).strip()
-                calories = match.group(3).strip()
-                mealplan_list.append({"day": day, "dish": dish, "calories": calories})
+        # ----- parse table -----
+        days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+        mp = []
+        for d in days:
+            m = re.search(rf"{d}\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(\d+)", md, re.I)
+            if m:
+                mp.append({"day":d, "dish":m.group(1).strip(),
+                           "cal":f"{m.group(3)} kcal"})
+        st.session_state.mealplan_list = mp
 
-        st.session_state.mealplan_list = mealplan_list
-
-    # 🔹 Display Meal Plan on Calendar
+    # ----- calendar -----
     if "mealplan_list" in st.session_state:
-        today = dt.date.today()
-        ev = []
-        for idx, item in enumerate(st.session_state.mealplan_list):
-            day_date = today + dt.timedelta(days=idx)
-            title = f"{item['dish']} ({item['calories']})"
-            ev.append({"title": title, "start": day_date.isoformat()})
+        start = dt.date.today()
+        events = [{"title":f"{it['dish']} ({it['cal']})",
+                   "start":(start+dt.timedelta(i)).isoformat()}
+                  for i,it in enumerate(st.session_state.mealplan_list)]
+        calendar(events=events, options={"initialView":"dayGridWeek"})
 
-        st.markdown("### 🗓️ Meal Plan Calendar")
-        calendar(events=ev, options={"initialView": "dayGridWeek"})
-    else:
-        st.info("No meal plan detected. Generate above!")
 
 ###############################################################################
 # ⚖️ BMI Calculator
