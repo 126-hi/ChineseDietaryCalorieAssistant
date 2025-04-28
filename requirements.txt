@@ -1,31 +1,44 @@
+# ─────────────────────────────
 # Core
+# ─────────────────────────────
 streamlit>=1.34
 openai>=1.25
 tiktoken>=0.5.1
 
-# LangChain RAG
+# ─────────────────────────────
+# LangChain RAG Stack
+# ─────────────────────────────
 langchain==0.2.*
 langchain-core>=0.2
 langchain-community>=0.0.8
 faiss-cpu>=1.8.0
 pypdf>=3.15
 
-# Data and Visualization
+# ─────────────────────────────
+# Data & Visualization
+# ─────────────────────────────
 pandas>=2.2
 plotly>=5.20
 pillow>=10.0
 requests>=2.31
 python-dotenv>=1.0
+matplotlib>=3.8
+seaborn>=0.12
+pyyaml>=6.0
+scipy>=1.10
 
-# YOLOv7 Dependencies
+# ─────────────────────────────
+# YOLOv7 + PyTorch Dependencies
+# ─────────────────────────────
 torch>=2.2.0
 torchvision>=0.15
-matplotlib>=3.8
 opencv-python>=4.9
 numpy>=1.25
+thop>=0.1.1.post2209072238
 
-# Codespace GPU (Optional if using CUDA)
-# torchvision
-# torchaudio
+# ─────────────────────────────
+# (Optional) TensorBoard for visualization
+# ─────────────────────────────
+# tensorboard>=2.14
 
 
