@@ -95,39 +95,50 @@ retriever = build_retriever(list(COOKBOOKS.values()))
 def chat(msgs,temp=0.6):
     return client.chat.completions.create(model="gpt-3.5-turbo",messages=msgs,temperature=temp).choices[0].message.content.strip()
 
-###############################################################################
+################################################################################
 # 🔌 YOLOv7 Loader & Infer
 ###############################################################################
 @st.cache_resource(show_spinner="Loading YOLOv7 …")
-def load_model(path="weights/best.pt"):
+def load_model(path="best.pt"):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     try:
-        model = attempt_load(path,map_location=device,weights_only=False)
+        # ✨ 删掉 weights_only，避免 unexpected keyword argument 报错
+        model = attempt_load(path, map_location=device)
     except Exception as e:
         st.error(f"Error loading YOLO model: {e}")
         st.stop()
-    model.to(device).eval();return model,device
+    model.to(device).eval()
+    return model, device
 
-model,device = load_model()
+# 🔥 Load model at start
+model, device = load_model()
+
+# 🔥 Class names (assumes model has names attribute)
 class_names = model.names
-nutri = {"egg":68,"rice":130,"salad":35}
 
+# 🔥 Nutritional mapping
+nutri = {"egg": 68, "rice": 130, "salad": 35}
+
+# 🔥 Preprocess function
 def preprocess(image):
-    arr = np.array(image); r = letterbox(arr,640)[0]; r = r[:,:,::-1].transpose(2,0,1)
-    return torch.from_numpy(np.ascontiguousarray(r)).float().div(255).unsqueeze(0),arr
+    arr = np.array(image)
+    r = letterbox(arr, 640)[0]            # resize with padding
+    r = r[:, :, ::-1].transpose(2, 0, 1)   # BGR to RGB and channel-first
+    return torch.from_numpy(np.ascontiguousarray(r)).float().div(255).unsqueeze(0), arr
 
+# 🔥 Detection function
 def detect(image, conf=0.25, iou=0.45):
     t, a = preprocess(image)
     t = t.to(device)
     with torch.no_grad():
         pred = non_max_suppression(model(t)[0], conf, iou)[0]
     if pred is not None and len(pred):
-        pred[:,:4] = scale_coords(t.shape[2:], pred[:,:4], a.shape).round()
-        for *xy, conf, cls in pred:
+        pred[:, :4] = scale_coords(t.shape[2:], pred[:, :4], a.shape).round()
+        for *xy, conf_score, cls in pred:
             name = class_names[int(cls)]
             kcal = nutri.get(name, '?')
-            cv2.rectangle(a, (int(xy[0]), int(xy[1])), (int(xy[2]), int(xy[3])), (0,255,0), 2)
-            cv2.putText(a, f"{name}: {kcal}kcal", (int(xy[0]), int(xy[1])-6), 0, 0.5, (0,0,0), 2)
+            cv2.rectangle(a, (int(xy[0]), int(xy[1])), (int(xy[2]), int(xy[3])), (0, 255, 0), 2)
+            cv2.putText(a, f"{name}: {kcal}kcal", (int(xy[0]), int(xy[1]) - 6), 0, 0.5, (0, 0, 0), 2)
     return a
 
 ###############################################################################
