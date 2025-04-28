@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Streamlit Multi-Agent Cuisine Assistant – Fully-Integrated Final Build (修正版)
+Streamlit Multi-Agent Cuisine Assistant – Fully-Integrated Final Build (美化增强版)
 ==============================================================================
 """
 
 ###############################################################################
-# 🛠 Imports & Path
+# 🔧 Imports & Path
 ###############################################################################
 import sys, os, re, textwrap, datetime as dt
 from pathlib import Path
@@ -29,7 +29,7 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores import FAISS
 
 ###############################################################################
-# 🎨 Global pastel theme
+# 💌 Global pastel theme + Button Style
 ###############################################################################
 st.markdown("""
 <style>
@@ -37,11 +37,19 @@ st.markdown("""
 html,body,[class*='css']{background-color:var(--bg)!important;}
 .stApp{background-color:var(--bg);}
 .stSidebar{background-color:var(--sidebar);} 
-.stButton>button{background:var(--primary);color:var(--white);border:0;padding:6px 16px;border-radius:6px}
-.stButton>button:hover{background:#5a7bad}
+.stButton>button{background:var(--primary);color:var(--white);border:0;padding:6px 16px;border-radius:12px;font-weight:bold}
+.stButton>button:hover{background:#5a7bad;color:white}
 .stMarkdown h1,h2,h3{color:var(--primary);} 
 </style>
 """,unsafe_allow_html=True)
+
+###############################################################################
+# 🌟 Top Logo & Title
+###############################################################################
+st.markdown("""
+<h1 style='text-align: center;'>🥢 Chinese Cuisine & Nutrition Assistant</h1>
+<p style='text-align: center; color: grey;'>Your AI-powered Chinese Meal Planner and Tracker</p>
+""", unsafe_allow_html=True)
 
 ###############################################################################
 # 🔑 API Keys (sidebar)
@@ -58,7 +66,7 @@ openai.api_key = api_key
 client = openai.OpenAI(api_key=api_key)
 
 ###############################################################################
-# 📜 Persisted system prompt for chat
+# 📓 Persisted system prompt for chat
 ###############################################################################
 SYSTEM_PROMPT = (
     "You are a culinary assistant who helps users create authentic Chinese recipes based on available ingredients.\n"
@@ -68,7 +76,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = [{"role":"system","content":SYSTEM_PROMPT}]
 
 ###############################################################################
-# 📚 Cookbooks & FAISS retriever
+# 📓 Cookbooks & FAISS retriever
 ###############################################################################
 COOKBOOKS = {
     "Easy Chinese Cuisine":"data/01. Easy Chinese Cuisine author Ailam Lim.pdf",
@@ -89,7 +97,7 @@ def build_retriever(paths:List[str]):
 retriever = build_retriever(list(COOKBOOKS.values()))
 
 ###############################################################################
-# 🤖 Chat helper
+# 🤖 Chat helpers
 ###############################################################################
 def chat(msgs, temp=0.6):
     return client.chat.completions.create(
@@ -97,6 +105,29 @@ def chat(msgs, temp=0.6):
         messages=msgs,
         temperature=temp
     ).choices[0].message.content.strip()
+
+def chat_with_cookbook(user_query, k=3, temp=0.6):
+    related_docs = retriever.get_relevant_documents(user_query, k=k)
+    context = "\n\n".join(doc.page_content for doc in related_docs)
+    full_prompt = (
+        f"You are a Chinese cuisine assistant. Based on the following cookbook references:\n\n"
+        f"{context}\n\n"
+        f"And the user's request:\n{user_query}\n\n"
+        f"Generate a detailed and authentic Chinese-style recipe or meal plan.")
+    return client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role":"user","content":full_prompt}],
+        temperature=temp
+    ).choices[0].message.content.strip()
+
+###############################################################################
+# 🛀 Sidebar navigation (emoji enhanced)
+###############################################################################
+with st.sidebar:
+    st.markdown("---")
+    section = st.radio("Feature", ("🏠 Home", "🍽️ Recipes", "📅 Meal Plan", "🗓️ Calendar", "⚖️ BMI", "📷 YOLO", "🥗 Nutrition"))
+
+
 
 ###############################################################################
 # 🔌 YOLOv7 Loader & Infer
@@ -112,30 +143,17 @@ def load_model(path="best.pt"):
     model.to(device).eval()
     return model, device
 
-# 🔥 Load model at start
 model, device = load_model()
 class_names = model.names
-
-# 🔥 YOLO Nutritional mapping
 nutri = {"egg": 68, "rice": 130, "salad": 35}
 
-# 🔥 Nutrition Tracker small database
-food_db = {
-    "egg": {"calories": 68, "protein": 6, "carbs": 1, "fat": 5},
-    "rice": {"calories": 130, "protein": 2.7, "carbs": 28, "fat": 0.3},
-    "salad": {"calories": 35, "protein": 2, "carbs": 7, "fat": 0.2},
-    "chicken breast": {"calories": 165, "protein": 31, "carbs": 0, "fat": 3.6},
-    "apple": {"calories": 95, "protein": 0.5, "carbs": 25, "fat": 0.3},
-}
-
-# 🔥 Preprocess function
+# Preprocess and detect function
 def preprocess(image):
     arr = np.array(image)
     r = letterbox(arr, 640)[0]
     r = r[:, :, ::-1].transpose(2, 0, 1)
     return torch.from_numpy(np.ascontiguousarray(r)).float().div(255).unsqueeze(0), arr
 
-# 🔥 Detection function
 def detect(image, conf=0.25, iou=0.45):
     t, a = preprocess(image)
     t = t.to(device)
@@ -151,97 +169,108 @@ def detect(image, conf=0.25, iou=0.45):
     return a
 
 ###############################################################################
-# 🗂 Sidebar navigation
+# 🏠 Home – Welcome Only
 ###############################################################################
-with st.sidebar:
-    st.markdown("---")
-    section = st.radio("Feature", ("Home", "Recipes", "Meal Plan", "Calendar", "BMI", "YOLO", "Nutrition"))
-
-###############################################################################
-# 🏠 Home – clean page
-###############################################################################
-if section == "Home":
+if section == "🏠 Home":
     st.header("🏠 Welcome!")
-    st.write("Welcome to the Chinese Cuisine Assistant App. Use the sidebar to explore features like Recipes, Meal Plans, Nutrition Tracking, and more!")
-
+    st.write("Use the sidebar to explore Recipes, Meal Plans, Nutrition Tracking, and more!")
 
 ###############################################################################
-# 🍽️ Recipes / Meal Plan (chat)
+# 🍽️ Recipes / 📅 Meal Plan – RAG Enhanced
 ###############################################################################
-if section in {"Recipes", "Meal Plan"}:
-    prompt = st.text_area("Your request", key="prompt", height=120)
-    if st.button("Generate") and prompt.strip():
-        msgs = st.session_state.messages + [{"role": "user", "content": prompt}]
-        reply = chat(msgs)
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        st.session_state.messages.append({"role": "assistant", "content": reply})
+if section == "🍽️ Recipes":
+    st.header("🍽️ Recipe Generator")
+    prompt = st.text_area("Describe the dish you want:", key="recipe_prompt", height=120)
+    if st.button("Generate Recipe"):
+        reply = chat_with_cookbook(prompt)
         st.markdown(reply)
-        if section == "Meal Plan":
-            st.session_state.mealplan_md = reply
+
+if section == "📅 Meal Plan":
+    st.header("📅 Meal Plan Generator")
+    ingredients = st.text_input("Available ingredients:", value="tofu, beef, broccoli, garlic, egg")
+    calorie_target = st.number_input("Target Calories per Day:", min_value=500, max_value=4000, value=1500)
+
+    if st.button("Generate Meal Plan"):
+        user_request = (
+            f"Create a 7-day meal plan using these ingredients: {ingredients}. "
+            f"Each day should be about {calorie_target} calories. List dish name, ingredients with quantity, and estimated calories in markdown table."
+        )
+        reply = chat_with_cookbook(user_request)
+        st.session_state.mealplan_md = reply
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        mealplan_list = []
+        for day in days:
+            if day in reply:
+                block = reply.split(day)[1]
+                first_line = block.strip().splitlines()[0]
+                dish = first_line.strip().split(":")[-1].strip()
+                mealplan_list.append({"day": day, "dish": dish})
+        st.session_state.mealplan_list = mealplan_list
+        st.markdown(reply)
 
 ###############################################################################
-# 📅 Calendar (FullCalendar)
+# 🗓️ Calendar (Meal Plan Sync)
 ###############################################################################
-if section == "Calendar":
-    st.header("📅 Meal Planner")
+if section == "🗓️ Calendar":
+    st.header("🗓️ Meal Planner Calendar")
     ev = []
-    if "mealplan_md" in st.session_state:
-        patt = r"\|\s*(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*\|([^|]*)\|([^|]*)\|([^|]*)\|"
-        found = re.findall(patt, st.session_state.mealplan_md)
-        if found:
-            wk = dt.date.today()
-            for d, br, lun, din in found:
-                day = wk + dt.timedelta(days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].index(d))
-                for meal, label in zip([br, lun, din], ["Breakfast", "Lunch", "Dinner"]):
-                    if meal.strip():
-                        ev.append({"title": f"{meal.strip()} • {label}", "start": day.isoformat()})
-        else:
-            st.warning("No valid meal plan detected!")
-    calendar(events=ev, options={"initialView": "dayGridMonth"})
+    if "mealplan_list" in st.session_state:
+        today = dt.date.today()
+        for idx, item in enumerate(st.session_state.mealplan_list):
+            day_date = today + dt.timedelta(days=idx)
+            ev.append({"title": item["dish"], "start": day_date.isoformat()})
+        calendar(events=ev, options={"initialView": "dayGridWeek"})
+    else:
+        st.info("No meal plan detected. Please generate first!")
 
 ###############################################################################
-# 🩺 BMI
+# ⚖️ BMI Calculator
 ###############################################################################
-if section == "BMI":
+if section == "⚖️ BMI":
     w = st.number_input("Weight (kg)", 0.0, 300.0, 70.0)
     h = st.number_input("Height (cm)", 0.0, 250.0, 170.0)
-    if st.button("BMI") and h > 0:
+    if st.button("Calculate BMI") and h > 0:
         bmi = w / ((h/100)**2)
         st.success(f"BMI = {bmi:.1f}")
 
 ###############################################################################
-# 🍔 YOLO calorie
+# 📷 YOLO Food Calorie Estimation
 ###############################################################################
-if section == "YOLO":
-    up = st.file_uploader("Upload food", type=["jpg", "png"])
+if section == "📷 YOLO":
+    up = st.file_uploader("Upload food image:", type=["jpg", "png"])
     if up:
         arr = detect(Image.open(up))
         st.image(Image.fromarray(arr), use_column_width=True)
 
 ###############################################################################
-# 🥗 Nutrition Tracker
+# 🥗 Nutrition Tracker (with Emoji)
 ###############################################################################
-if section == "Nutrition":
+if section == "🥗 Nutrition":
     st.header("🥗 Food Nutrition Tracker")
-
     today = dt.date.today().isoformat()
 
     if "food_log" not in st.session_state:
         st.session_state.food_log = {}
-
     if today not in st.session_state.food_log:
         st.session_state.food_log[today] = []
+
+    food_db = {
+        "egg": {"calories": 68, "protein": 6, "carbs": 1, "fat": 5},
+        "rice": {"calories": 130, "protein": 2.7, "carbs": 28, "fat": 0.3},
+        "salad": {"calories": 35, "protein": 2, "carbs": 7, "fat": 0.2},
+        "chicken breast": {"calories": 165, "protein": 31, "carbs": 0, "fat": 3.6},
+        "apple": {"calories": 95, "protein": 0.5, "carbs": 25, "fat": 0.3},
+    }
+    emoji_map = {"egg": "🍳", "salad": "🥗", "rice": "🍚", "chicken breast": "🍗", "apple": "🍎"}
 
     food = st.selectbox("Select a food", list(food_db.keys()))
     qty = st.number_input("Quantity (servings)", 1, 10, 1)
 
     if st.button("Add Food"):
         entry = food_db[food].copy()
-        entry["name"] = food
+        entry["name"] = emoji_map.get(food, "") + " " + food
         entry["quantity"] = qty
         st.session_state.food_log[today].append(entry)
-
-    st.subheader(f"🍽️ Today's Food Log ({today})")
 
     if st.session_state.food_log[today]:
         df = pd.DataFrame(st.session_state.food_log[today])
@@ -259,22 +288,9 @@ if section == "Nutrition":
 
         st.success(f"Today Total: {total_cal:.0f} kcal | Protein {total_pro:.1f}g | Carbs {total_carb:.1f}g | Fat {total_fat:.1f}g")
 
-        st.subheader("📋 Today's Nutrition Analysis")
-
-        if total_cal > 2200:
-            st.error(f"⚠️ High Calorie Alert: {total_cal:.0f} kcal consumed! Try to eat lighter meals.")
-        elif total_cal < 1200:
-            st.warning(f"⚠️ Low Calorie Warning: Only {total_cal:.0f} kcal today. You may need to eat more.")
-
-        if total_pro < 50:
-            st.info(f"💪 Protein intake is low ({total_pro:.1f}g). Consider adding more protein-rich foods.")
-
         csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="⬇️ Download today's log as CSV",
-            data=csv,
-            file_name=f"nutrition_log_{today}.csv",
-            mime='text/csv',
-        )
+        st.download_button("⬇️ Download today's log as CSV", data=csv, file_name=f"nutrition_log_{today}.csv", mime='text/csv')
     else:
-        st.info("No foods added yet for today. Start by adding your meals!")
+        st.info("No foods added yet for today. Start by adding!")
+
+
