@@ -176,7 +176,7 @@ if section == "🏠 Home":
     st.write("Use the sidebar to explore Recipes, Meal Plans, Nutrition Tracking, and more!")
 
 ###############################################################################
-# 🍽️ Recipes / 📅 Meal Plan – RAG Enhanced
+# 🍽️ Recipes / 📅 Meal Plan – RAG Enhanced (Unified)
 ###############################################################################
 if section == "🍽️ Recipes":
     st.header("🍽️ Recipe Generator")
@@ -187,16 +187,21 @@ if section == "🍽️ Recipes":
 
 if section == "📅 Meal Plan":
     st.header("📅 Meal Plan Generator")
-    ingredients = st.text_input("Available ingredients:", value="tofu, beef, broccoli, garlic, egg")
+
+    # 🔹 Input fields
+    ingredients = st.text_input("Ingredients available:", value="tofu, beef, broccoli, garlic, egg")
     calorie_target = st.number_input("Target Calories per Day:", min_value=500, max_value=4000, value=1500)
 
     if st.button("Generate Meal Plan"):
         user_request = (
-            f"Create a 7-day meal plan using these ingredients: {ingredients}. "
-            f"Each day should be about {calorie_target} calories. List dish name, ingredients with quantity, and estimated calories in markdown table."
+            f"Create a 7-day Chinese meal plan using: {ingredients}. "
+            f"Each day should be about {calorie_target} calories. "
+            "Format the output as a markdown table: Day | Dish | Ingredients | Estimated Calories."
         )
         reply = chat_with_cookbook(user_request)
         st.session_state.mealplan_md = reply
+
+        # 🔹 Parse dishes for Calendar
         days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         mealplan_list = []
         for day in days:
@@ -206,22 +211,23 @@ if section == "📅 Meal Plan":
                 dish = first_line.strip().split(":")[-1].strip()
                 mealplan_list.append({"day": day, "dish": dish})
         st.session_state.mealplan_list = mealplan_list
+
+        # 🔹 Show generated meal plan
+        st.markdown("### 📜 Generated Meal Plan")
         st.markdown(reply)
 
-###############################################################################
-# 🗓️ Calendar (Meal Plan Sync)
-###############################################################################
-if section == "🗓️ Calendar":
-    st.header("🗓️ Meal Planner Calendar")
-    ev = []
+    # 🔹 Show Calendar directly
     if "mealplan_list" in st.session_state:
+        st.markdown("### 🗓️ Scheduled Meals")
         today = dt.date.today()
+        ev = []
         for idx, item in enumerate(st.session_state.mealplan_list):
             day_date = today + dt.timedelta(days=idx)
             ev.append({"title": item["dish"], "start": day_date.isoformat()})
         calendar(events=ev, options={"initialView": "dayGridWeek"})
     else:
-        st.info("No meal plan detected. Please generate first!")
+        st.info("No meal plan yet. Generate first!")
+
 
 ###############################################################################
 # ⚖️ BMI Calculator
