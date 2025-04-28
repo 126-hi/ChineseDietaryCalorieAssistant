@@ -1,49 +1,29 @@
-# ── Core ─────────────────────────────────────────────
+# Core
 streamlit>=1.34
 openai>=1.25
-tiktoken>=0.5.1          # for OpenAIEmbeddings
+tiktoken>=0.5.1
 
-# ── LangChain Stack ───────────────────────────────────
+# LangChain RAG
 langchain==0.2.*
 langchain-core>=0.2
 langchain-community>=0.0.8
-faiss-cpu>=1.8.0         # Vector store for retrieval (RAG)
+faiss-cpu>=1.8.0
+pypdf>=3.15
 
-# ── PDF parsing for RAG ───────────────────────────────
-pypdf>=3.15              # Lightweight PDF loader
-
-# ── Data & Visualisation ──────────────────────────────
+# Data and Visualization
 pandas>=2.2
 plotly>=5.20
-pillow>=10.0             # Image support for Streamlit
-
-# ── HTTP & Environment ────────────────────────────────
+pillow>=10.0
 requests>=2.31
-python-dotenv>=1.0       # For environment variable management
+python-dotenv>=1.0
 
-# ── YOLOv7 Dependencies ───────────────────────────────
-# Install CPU-only version of torch (compatible with Codespaces)
-torch==2.2.2+cpu
-torchvision==0.17.2+cpu
-torchaudio==2.2.2+cpu
--f https://download.pytorch.org/whl/cpu/torch_stable.html
-
+# YOLOv7 Dependencies
+torch>=2.2.0
 opencv-python>=4.9
 numpy>=1.25
 
-# ── Important Notes ───────────────────────────────────
-# ⚠️ System Dependency:
-#   If you encounter ImportError: libGL.so.1 missing (typically on Linux / Codespaces),
-#   please install system package manually:
-#   
-#   sudo apt update && sudo apt install -y libgl1-mesa-glx
-#
-# ⚠️ YOLOv7 Local Repository:
-#   This project requires yolov7 source code locally.
-#   Please clone yolov7 repository into project directory:
-#
-#   git clone https://github.com/WongKinYiu/yolov7
-#
-#   Ensure yolov7/ contains: models/, utils/, detect.py etc.
+# Codespace GPU (Optional if using CUDA)
+# torchvision
+# torchaudio
 
 
