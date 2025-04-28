@@ -158,14 +158,12 @@ with st.sidebar:
     section = st.radio("Feature", ("Home", "Recipes", "Meal Plan", "Calendar", "BMI", "YOLO", "Nutrition"))
 
 ###############################################################################
-# 🏠 Home – cookbook covers grid
+# 🏠 Home – clean page
 ###############################################################################
 if section == "Home":
-    st.header("📚 Cookbooks")
-    cols = st.columns(3)
-    for i, (title, _) in enumerate(COOKBOOKS.items()):
-        with cols[i % 3]:
-            st.image("https://placehold.co/200x150?text=Cover", caption=title)
+    st.header("🏠 Welcome!")
+    st.write("Welcome to the Chinese Cuisine Assistant App. Use the sidebar to explore features like Recipes, Meal Plans, Nutrition Tracking, and more!")
+
 
 ###############################################################################
 # 🍽️ Recipes / Meal Plan (chat)
