@@ -6,7 +6,7 @@ openai>=1.25
 tiktoken>=0.5.1
 
 # ─────────────────────────────
-# LangChain RAG Stack
+# LangChain / RAG
 # ─────────────────────────────
 langchain==0.2.*
 langchain-core>=0.2
@@ -15,7 +15,7 @@ faiss-cpu>=1.8.0
 pypdf>=3.15
 
 # ─────────────────────────────
-# Data & Visualization
+# Data & Visualisation
 # ─────────────────────────────
 pandas>=2.2
 plotly>=5.20
@@ -26,9 +26,10 @@ matplotlib>=3.8
 seaborn>=0.12
 pyyaml>=6.0
 scipy>=1.10
+tqdm>=4.66                # progress bars
 
 # ─────────────────────────────
-# YOLOv7 + PyTorch Dependencies
+# YOLOv7 / Deep-Learning Runtime
 # ─────────────────────────────
 torch>=2.2.0
 torchvision>=0.15
@@ -37,8 +38,21 @@ numpy>=1.25
 thop>=0.1.1.post2209072238
 
 # ─────────────────────────────
-# (Optional) TensorBoard for visualization
+# Training-Only / Advanced  🔽
+
 # ─────────────────────────────
-# tensorboard>=2.14
+tensorboard>=2.14         # training logs
+pycocotools>=2.0.6        # COCO dataset utils
+scikit-image>=0.19
+# scikit-learn>=1.3      
+# albumentations>=1.3 git add requirement.txt
+git commit -m "add packages"
+git push origin main
+
+# ─────────────────────────────
+# Streamlit Custom Widgets
+# ─────────────────────────────
+streamlit-calendar>=0.2   # FullCalendar (Month / Week / Day)
+
 
 
