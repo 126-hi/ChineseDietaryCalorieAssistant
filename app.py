@@ -156,7 +156,45 @@ if section=="⚖️ BMI":
         st.success(f"BMI = {w/((h/100)**2):.1f}")
 
 ###############################################################################
-# 📷 YOLO Calorie (kept minimal, unchanged)
+###############################################################################
+# 🏎️  YOLO helpers (added back)
+###############################################################################
+
+@st.cache_resource(show_spinner="Loading YOLOv7 …")
+def load_yolo(path="best.pt"):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    mdl = attempt_load(path, map_location=device)
+    mdl.to(device).eval()
+    return mdl, device
+
+model, device = load_yolo()
+class_names = model.names if hasattr(model, "names") else []
+
+nutri_map = {"egg":68,"rice":130,"salad":35}
+
+def _pre(image):
+    arr = np.array(image)
+    r   = letterbox(arr, 640)[0]
+    r = r[:, :, ::-1].transpose(2, 0, 1)
+    return torch.from_numpy(np.ascontiguousarray(r)).float().div(255).unsqueeze(0), arr
+
+def detect(img):
+    t,a=_pre(img)
+    t=t.to(device)
+    with torch.no_grad():
+        pred=non_max_suppression(model(t)[0])[0]
+    if pred is not None and len(pred):
+        pred[:,:4]=scale_coords(t.shape[2:],pred[:,:4],a.shape).round()
+        for *xy,conf,cls in pred:
+            name=class_names[int(cls)] if class_names else str(int(cls))
+            kcal=nutri_map.get(name,'?')
+            cv2.rectangle(a,(int(xy[0]),int(xy[1])),(int(xy[2]),int(xy[3])),(0,255,0),2)
+            cv2.putText(a,f"{name}:{kcal}kcal",(int(xy[0]),int(xy[1])-6),0,0.5,(0,0,0),2)
+    return a
+
+###############################################################################
+# 📷 YOLO Calorie (image upload)
+###############################################################################
 ###############################################################################
 if section=="📷 YOLO":
     st.header("📷 Estimate Calories from Image")
